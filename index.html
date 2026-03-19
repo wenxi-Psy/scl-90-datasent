@@ -109,6 +109,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 .btn-primary { background: var(--primary); color: white; }
 .btn-test { background: #475569; color: white; }
 .btn-export { background: #059669; color: white; display: none; }
+.btn-email { background: #0f766e; color: white; display: none; }
 .btn-edit { background: #475569; color: white; display: none; }
 </style>
 </head>
@@ -125,7 +126,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 <div class="privacy-notice">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e40af" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
 <div class="privacy-text">
-<strong>隐私保护声明：</strong>本程序为纯前端架构，您的所有答题数据均<strong>仅在您的浏览器本地</strong>进行计算，系统不会上传、存储或收集您的任何个人信息与测评结果。
+<strong>隐私保护声明：</strong>本程序默认仍为纯前端架构，您的答题数据会<strong>先在浏览器本地</strong>完成计算；只有当您主动点击“发送到咨询师邮箱”时，才会调用系统分享/邮件能力，将报告摘要与 CSV 文件发送给咨询师。
 </div>
 </div>
 
@@ -179,9 +180,10 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 <div class="sticky-actions">
     <!-- button class="btn btn-test" onclick="autoFill()">模拟填卷</button-->
     <!--button class="btn btn-test" onclick="autoFill()">模拟填卷</button-->
-<button id="submitBtn" class="btn btn-primary" onclick="submit()">生成报告</button>
-<button id="dlBtn" class="btn btn-export" onclick="exportData()">导出 CSV 详情</button>
-<button id="editBtn" class="btn btn-edit" onclick="backToForm()">返回修改答案</button>
+<button type="button" id="submitBtn" class="btn btn-primary" onclick="generateReport()">生成报告</button>
+<button type="button" id="dlBtn" class="btn btn-export" onclick="exportData()">导出 CSV 详情</button>
+<button type="button" id="emailBtn" class="btn btn-email" onclick="sendToCounselorEmail()">发送到咨询师邮箱</button>
+<button type="button" id="editBtn" class="btn btn-edit" onclick="backToForm()">返回修改答案</button>
 </div>
 
 <script>
@@ -254,6 +256,8 @@ form.addEventListener("change", (e) => {
 updateProgress();
 
 let currentScores = {};
+let latestReport = null;
+const counselorEmail = "wenxi_deng@qq.com";
 
 function fillScores(scores) {
   scores.forEach((score, idx) => {
@@ -321,7 +325,66 @@ document.addEventListener("keydown", (event) => {
   autoFill();
 });
 
-function submit() {
+function getFactorResults() {
+  return Object.entries(factorDefs).map(([name, def]) => {
+    const sum = def.ids.reduce((acc, id) => acc + currentScores[id], 0);
+    const avg = Number((sum / def.ids.length).toFixed(2));
+    return { name, avg, status: avg >= 2.0 ? "需关注" : "正常", desc: def.desc, isHigh: avg >= 2.0 };
+  });
+}
+
+function buildCsvContent() {
+  const factorResults = getFactorResults();
+  let csv = "\uFEFF";
+  csv += "【维度因子分析】\n";
+  csv += "维度名称,因子分,评估结论\n";
+
+  factorResults.forEach((item) => {
+    csv += `${item.name},${item.avg.toFixed(2)},${item.status}\n`;
+  });
+
+  csv += "\n";
+  csv += "【90项原始答卷详情】\n";
+  csv += "题号,条目内容,所属维度,得分\n";
+
+  for (let i = 1; i <= 90; i++) {
+    let dimension = "其他";
+    for (let f in factorDefs) {
+      if (factorDefs[f].ids.includes(i)) {
+        dimension = f;
+        break;
+      }
+    }
+    csv += `${i},${questions[i-1]},${dimension},${currentScores[i]}\n`;
+  }
+
+  return csv;
+}
+
+function getCsvFilename() {
+  const now = new Date();
+  const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `SCL90测评报告_${isoDate}.csv`;
+}
+
+function buildEmailSummary() {
+  if (!latestReport) return "";
+  const highlighted = latestReport.factorResults.filter((item) => item.isHigh).map((item) => `${item.name} ${item.avg.toFixed(2)}`);
+  const factorText = highlighted.length ? highlighted.join("；") : "本次各维度因子分均在参考范围内";
+  return [
+    "您好，咨询师：",
+    "",
+    "这是来自 SCL-90 前端页面生成的一份测评结果。",
+    `总分：${latestReport.total}`,
+    `阳性项数：${latestReport.posCount}`,
+    `总均分：${latestReport.avg.toFixed(2)}`,
+    `重点关注维度：${factorText}`,
+    "",
+    "若当前邮件未自动带上附件，请将刚下载的 CSV 文件手动添加后发送。"
+  ].join("\n");
+}
+
+function generateReport() {
 const fd = new FormData(form);
 let total = 0, posCount = 0, missed = [];
 for(let i=1; i<=90; i++) {
@@ -348,24 +411,32 @@ document.getElementById("resAvg").innerText = (total/90).toFixed(2);
 tLabel.className = `stat-val ${total >= 160 ? 'warning' : ''}`;
 pLabel.className = `stat-val ${posCount >= 43 ? 'warning' : ''}`;
 
+const factorResults = getFactorResults();
 let fHtml = ""; let analysisDetails = "<h4>评分偏高维度解释：</h4>";
 let highCount = 0;
 
-for(let f in factorDefs) {
-const ids = factorDefs[f].ids;
-const avg = (ids.reduce((a,b)=>a+currentScores[b], 0) / ids.length).toFixed(2);
-const isH = avg >= 2.0;
-fHtml += `<div class="f-card ${isH?'warning':''}"><b>${f}</b><br><span style="font-size:1.1rem">${avg}</span></div>`;
-if(isH) {
+factorResults.forEach((item) => {
+const avgText = item.avg.toFixed(2);
+fHtml += `<div class="f-card ${item.isHigh ? 'warning' : ''}"><b>${item.name}</b><br><span style="font-size:1.1rem">${avgText}</span></div>`;
+if(item.isHigh) {
 highCount++;
-analysisDetails += `<div class="analysis-item"><b>${f}：</b>${factorDefs[f].desc}</div>`;
+analysisDetails += `<div class="analysis-item"><b>${item.name}：</b>${item.desc}</div>`;
 }
-}
+});
 document.getElementById("factorGrid").innerHTML = fHtml;
 document.getElementById("analysisArea").innerHTML = highCount > 0 ? analysisDetails : `<p style="color:var(--success)">各项指标均在参考范围内。</p>`;
 
+latestReport = {
+  total,
+  posCount,
+  avg: total / 90,
+  factorResults
+};
+
 document.getElementById("result-view").style.display = "block";
 document.getElementById("dlBtn").style.display = "block";
+document.getElementById("emailBtn").style.display = "block";
+document.getElementById("editBtn").style.display = "block";
 document.getElementById("submitBtn").style.display = "none";
 window.scrollTo({top: document.getElementById("result-view").offsetTop - 20, behavior: 'smooth'});
 }
@@ -373,63 +444,66 @@ window.scrollTo({top: document.getElementById("result-view").offsetTop - 20, beh
 function backToForm() {
   document.getElementById("result-view").style.display = "none";
   document.getElementById("dlBtn").style.display = "none";
+  document.getElementById("emailBtn").style.display = "none";
   document.getElementById("editBtn").style.display = "none";
   document.getElementById("submitBtn").style.display = "block";
   window.scrollTo({top: form.offsetTop - 20, behavior: 'smooth'});
 }
 
+function downloadCsvFile() {
+  const csv = buildCsvContent();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = getCsvFilename();
+  link.click();
+  URL.revokeObjectURL(url);
+  return blob;
+}
+
 function exportData() {
-    // 1. 初始化 CSV 头部，\uFEFF 用于解决 Excel 打开中文乱码问题
-    // 1. 初始化 CSV 头部 (带 BOM 防止乱码)
-let csv = "\uFEFF";
-
-    // --- 第一部分：维度因子分 ---
-    // --- 第一部分：维度因子分析 ---
-csv += "【维度因子分析】\n";
-    csv += "维度名称,因子分,评估结论\n";
-
-for(let f in factorDefs) {
-const ids = factorDefs[f].ids;
-        // 计算该维度的总分
-const sum = ids.reduce((a,b) => a + currentScores[b], 0);
-        // 计算均分 (保留2位小数)
-const avg = (sum / ids.length).toFixed(2);
-        // 简单的判断逻辑 (≥2分提示需关注)
-const status = avg >= 2.0 ? "需关注" : "正常";
-
-csv += `${f},${avg},${status}\n`;
+  if (!latestReport) {
+    showInlineNotice("请先生成报告，再导出 CSV。");
+    return;
+  }
+  downloadCsvFile();
+  showInlineNotice("CSV 已下载到本地，可留存或发送给咨询师。");
 }
 
-    // 添加空行，把两部分数据隔开
-    // 添加空行分隔
-csv += "\n";
+async function sendToCounselorEmail() {
+  if (!latestReport) {
+    showInlineNotice("请先生成报告，再发送给咨询师。");
+    return;
+  }
 
-    // --- 第二部分：原始条目得分 ---
-    // --- 第二部分：原始条目详情 (带所属维度) ---
-csv += "【90项原始答卷详情】\n";
-    csv += "题号,条目内容,所属维度,得分\n";
+  const csv = buildCsvContent();
+  const filename = getCsvFilename();
+  const subject = `SCL-90 测评结果 ${new Date().toLocaleDateString('zh-CN')}`;
+  const body = buildEmailSummary();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const file = new File([blob], filename, { type: 'text/csv' });
 
-for(let i=1; i<=90; i++) {
-        // 查找当前题目 i 属于哪个维度
-        let dimension = "其他"; // 默认值
-        for(let f in factorDefs) {
-            if(factorDefs[f].ids.includes(i)) {
-                dimension = f;
-                break;
-            }
-        }
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: subject,
+        text: body,
+        files: [file]
+      });
+      showInlineNotice(`已调起系统分享面板，请选择邮件应用并发送至 ${counselorEmail}。`);
+      return;
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        showInlineNotice("您已取消发送，可稍后再次尝试。");
+        return;
+      }
+    }
+  }
 
-        // 写入一行：题号, 内容, 维度, 得分
-        csv += `${i},${questions[i-1]},${dimension},${currentScores[i]}\n`;
-}
-
-    // --- 生成并下载文件 ---
-    // --- 生成文件并下载 ---
-const blob = new Blob([csv], {type: 'text/csv'});
-const link = document.createElement("a");
-link.href = URL.createObjectURL(blob);
-link.download = `SCL90测评报告_${new Date().toLocaleDateString()}.csv`;
-link.click();
+  downloadCsvFile();
+  window.location.href = `mailto:${counselorEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  showInlineNotice(`当前浏览器暂不支持直接附加 CSV，已为您下载文件并打开邮件草稿，请手动添加附件后发送到 ${counselorEmail}。`);
 }
 </script>
 
