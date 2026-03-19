@@ -27,7 +27,17 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 .progress-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; color: #475569; margin-bottom: 8px; }
 .progress-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #6366f1, #818cf8); transition: width 0.2s ease; }
-.inline-notice { display: none; margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; font-size: 0.86rem; }
+.inline-notice, .send-status { display: none; margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; font-size: 0.86rem; }
+.notice-info { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.notice-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.notice-error { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.send-panel { margin-top: 24px; padding: 18px; border-radius: 14px; border: 1px solid #dbeafe; background: #f8fbff; }
+.send-panel h4 { margin: 0 0 10px 0; color: #0f172a; }
+.send-panel p { margin: 0 0 14px 0; font-size: 0.9rem; color: #475569; }
+.consent-row { display: flex; align-items: flex-start; gap: 10px; font-size: 0.9rem; color: #0f172a; }
+.consent-row input { margin-top: 3px; }
+.bot-trap { position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
 
 /* 题目卡片 */
 .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; border: 1px solid #e2e8f0; transition: border-color 0.3s, box-shadow 0.3s; }
@@ -76,7 +86,9 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
   label:active .opt-label { transform: scale(0.995); }
   .progress-wrap { top: 8px; padding: 10px 12px; margin-bottom: 12px; }
   .progress-header { font-size: 0.82rem; }
-  .inline-notice { font-size: 0.8rem; }
+  .inline-notice, .send-status { font-size: 0.8rem; }
+  .send-panel { padding: 16px; }
+  .consent-row { align-items: flex-start; }
   .sticky-actions { bottom: 12px; padding: 6px 10px; gap: 6px; }
   .btn { padding: 7px 12px; font-size: 0.78rem; }
 }
@@ -126,7 +138,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 <div class="privacy-notice">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e40af" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
 <div class="privacy-text">
-<strong>隐私保护声明：</strong>本程序默认仍为纯前端架构，您的答题数据会<strong>先在浏览器本地</strong>完成计算；只有当您主动点击“发送到咨询师邮箱”时，才会调用系统分享/邮件能力，将报告摘要与 CSV 文件发送给咨询师。
+<strong>隐私保护声明：</strong>本程序默认在浏览器本地完成测评与评分。只有当您在结果页<strong>勾选“已同意上传给咨询师”并点击自动发送</strong>后，系统才会把本次答卷摘要与 CSV 上传到云端发送接口，自动转发给咨询师邮箱；服务端仅用于完成发送，并带有基础频率限制与异常提交拦截。
 </div>
 </div>
 
@@ -167,6 +179,20 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 
 <div id="analysisArea" style="margin-top:30px;"></div>
 
+<div id="sendPanel" class="send-panel">
+<h4>发送给咨询师</h4>
+<p>勾选同意后，系统会把本次测评摘要与 CSV 附件上传到云端接口，并自动发送到咨询师邮箱 <strong>wenxi_deng@qq.com</strong>。如果自动发送失败，系统会自动下载 CSV，方便您人工转发给咨询师。</p>
+<label class="consent-row">
+  <input type="checkbox" id="consentCheckbox">
+  <span>我已知晓并同意将本次测评结果上传给咨询师，仅用于本次测评沟通与报告发送。</span>
+</label>
+<div id="sendStatus" class="send-status" role="status" aria-live="polite"></div>
+</div>
+
+<div class="bot-trap" aria-hidden="true">
+  <label>请勿填写<input id="trapField" type="text" autocomplete="off" tabindex="-1"></label>
+</div>
+
 <div class="disclaimer">
 <strong>专业声明与局限性说明：</strong><br>
 1. 本量表为<strong>主观自评工具</strong>，结果反映的是受试者<strong>近一周内</strong>的主观感受，具有较强的时效性。<br>
@@ -182,7 +208,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
     <!--button class="btn btn-test" onclick="autoFill()">模拟填卷</button-->
 <button type="button" id="submitBtn" class="btn btn-primary" onclick="generateReport()">生成报告</button>
 <button type="button" id="dlBtn" class="btn btn-export" onclick="exportData()">导出 CSV 详情</button>
-<button type="button" id="emailBtn" class="btn btn-email" onclick="sendToCounselorEmail()">发送到咨询师邮箱</button>
+<button type="button" id="emailBtn" class="btn btn-email" onclick="sendToCounselorEmail()" disabled>自动发送给咨询师</button>
 <button type="button" id="editBtn" class="btn btn-edit" onclick="backToForm()">返回修改答案</button>
 </div>
 
@@ -208,14 +234,39 @@ const progressFill = document.getElementById("progressFill");
 const progressText = document.getElementById("progressText");
 const progressBar = document.querySelector(".progress-bar");
 const inlineNotice = document.getElementById("inlineNotice");
+const sendBtn = document.getElementById("emailBtn");
+const editBtn = document.getElementById("editBtn");
+const consentCheckbox = document.getElementById("consentCheckbox");
+const sendStatus = document.getElementById("sendStatus");
+const trapField = document.getElementById("trapField");
+const pageStartedAt = Date.now();
 
-function showInlineNotice(msg) {
+function showInlineNotice(msg, type = "error") {
   inlineNotice.innerText = msg;
+  inlineNotice.className = `inline-notice notice-${type}`;
   inlineNotice.style.display = "block";
 }
 
 function hideInlineNotice() {
   inlineNotice.style.display = "none";
+  inlineNotice.className = "inline-notice";
+}
+
+function showSendStatus(msg, type = "info") {
+  sendStatus.innerText = msg;
+  sendStatus.className = `send-status notice-${type}`;
+  sendStatus.style.display = "block";
+}
+
+function hideSendStatus() {
+  sendStatus.style.display = "none";
+  sendStatus.className = "send-status";
+}
+
+function updateSendButtonState() {
+  const isSending = sendBtn.dataset.sending === "1";
+  const isSent = sendBtn.dataset.sent === "1";
+  sendBtn.disabled = !latestReport || !consentCheckbox.checked || isSending || isSent;
 }
 
 function highlightMissingQuestion(questionId) {
@@ -249,10 +300,21 @@ form.addEventListener("change", (e) => {
   if (e.target.matches("input[type=\"radio\"]")) {
     updateProgress();
     hideInlineNotice();
+hideSendStatus();
     const card = e.target.closest(".card");
     if (card) card.classList.remove("missing-highlight");
   }
 });
+
+consentCheckbox.addEventListener("change", () => {
+  if (consentCheckbox.checked) {
+    showSendStatus("您已同意上传。点击“自动发送给咨询师”后，系统会通过云端接口自动发出邮件。", "info");
+  } else {
+    hideSendStatus();
+  }
+  updateSendButtonState();
+});
+
 updateProgress();
 
 let currentScores = {};
@@ -306,7 +368,7 @@ function autoFill(minAvg = 1.6, maxAvg = 2.5) {
   updateProgress();
 
   const avg = (total / totalQuestions).toFixed(2);
-  showInlineNotice(`已随机填卷（Mac 快捷键），当前总均分约 ${avg}。`);
+  showInlineNotice(`已随机填卷（Mac 快捷键），当前总均分约 ${avg}。`, "info");
 }
 
 document.addEventListener("keydown", (event) => {
@@ -367,22 +429,18 @@ function getCsvFilename() {
   return `SCL90测评报告_${isoDate}.csv`;
 }
 
-function buildEmailSummary() {
-  if (!latestReport) return "";
-  const highlighted = latestReport.factorResults.filter((item) => item.isHigh).map((item) => `${item.name} ${item.avg.toFixed(2)}`);
-  const factorText = highlighted.length ? highlighted.join("；") : "本次各维度因子分均在参考范围内";
-  return [
-    "您好，咨询师：",
-    "",
-    "这是来自 SCL-90 前端页面生成的一份测评结果。",
-    `总分：${latestReport.total}`,
-    `阳性项数：${latestReport.posCount}`,
-    `总均分：${latestReport.avg.toFixed(2)}`,
-    `重点关注维度：${factorText}`,
-    "",
-    "若当前邮件未自动带上附件，请将刚下载的 CSV 文件手动添加后发送。"
-  ].join("\n");
+function buildSubmissionPayload() {
+  return {
+    consent: consentCheckbox.checked,
+    total: latestReport.total,
+    posCount: latestReport.posCount,
+    avg: Number(latestReport.avg.toFixed(2)),
+    startedAt: pageStartedAt,
+    trap: trapField.value.trim(),
+    answers: currentScores
+  };
 }
+
 
 function generateReport() {
 const fd = new FormData(form);
@@ -396,13 +454,14 @@ total += s; if(s >= 2) posCount++;
 }
 }
 if(missed.length > 0) {
-showInlineNotice(`还有 ${missed.length} 题未完成，请先补全后再生成报告。`);
+showInlineNotice(`还有 ${missed.length} 题未完成，请先补全后再生成报告。`, "error");
 highlightMissingQuestion(missed[0]);
 document.getElementById('q-'+missed[0]).scrollIntoView({behavior:'smooth', block:'center'});
 return;
 }
 
 hideInlineNotice();
+hideSendStatus();
 
 const tLabel = document.getElementById("resTotal");
 const pLabel = document.getElementById("resPosCount");
@@ -436,8 +495,14 @@ latestReport = {
 document.getElementById("result-view").style.display = "block";
 document.getElementById("dlBtn").style.display = "block";
 document.getElementById("emailBtn").style.display = "block";
-document.getElementById("editBtn").style.display = "block";
+editBtn.style.display = "block";
 document.getElementById("submitBtn").style.display = "none";
+sendBtn.dataset.sending = "0";
+sendBtn.dataset.sent = "0";
+sendBtn.textContent = "自动发送给咨询师";
+consentCheckbox.checked = false;
+updateSendButtonState();
+showSendStatus("请先勾选“已同意上传给咨询师”，再执行云端自动发送。", "info");
 window.scrollTo({top: document.getElementById("result-view").offsetTop - 20, behavior: 'smooth'});
 }
 
@@ -445,8 +510,15 @@ function backToForm() {
   document.getElementById("result-view").style.display = "none";
   document.getElementById("dlBtn").style.display = "none";
   document.getElementById("emailBtn").style.display = "none";
-  document.getElementById("editBtn").style.display = "none";
+  editBtn.style.display = "none";
   document.getElementById("submitBtn").style.display = "block";
+  consentCheckbox.checked = false;
+  sendBtn.dataset.sending = "0";
+  sendBtn.dataset.sent = "0";
+  sendBtn.textContent = "自动发送给咨询师";
+  hideInlineNotice();
+  hideSendStatus();
+  updateSendButtonState();
   window.scrollTo({top: form.offsetTop - 20, behavior: 'smooth'});
 }
 
@@ -464,46 +536,59 @@ function downloadCsvFile() {
 
 function exportData() {
   if (!latestReport) {
-    showInlineNotice("请先生成报告，再导出 CSV。");
+    showInlineNotice("请先生成报告，再导出 CSV。", "error");
     return;
   }
   downloadCsvFile();
-  showInlineNotice("CSV 已下载到本地，可留存或发送给咨询师。");
+  showInlineNotice("CSV 已下载到本地，可留存或发送给咨询师。", "info");
 }
 
 async function sendToCounselorEmail() {
   if (!latestReport) {
-    showInlineNotice("请先生成报告，再发送给咨询师。");
+    showInlineNotice("请先生成报告，再发送给咨询师。", "error");
     return;
   }
 
-  const csv = buildCsvContent();
-  const filename = getCsvFilename();
-  const subject = `SCL-90 测评结果 ${new Date().toLocaleDateString('zh-CN')}`;
-  const body = buildEmailSummary();
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const file = new File([blob], filename, { type: 'text/csv' });
-
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: subject,
-        text: body,
-        files: [file]
-      });
-      showInlineNotice(`已调起系统分享面板，请选择邮件应用并发送至 ${counselorEmail}。`);
-      return;
-    } catch (error) {
-      if (error && error.name === 'AbortError') {
-        showInlineNotice("您已取消发送，可稍后再次尝试。");
-        return;
-      }
-    }
+  if (!consentCheckbox.checked) {
+    showSendStatus("请先勾选“已同意上传给咨询师”，再执行自动发送。", "error");
+    updateSendButtonState();
+    return;
   }
 
-  downloadCsvFile();
-  window.location.href = `mailto:${counselorEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  showInlineNotice(`当前浏览器暂不支持直接附加 CSV，已为您下载文件并打开邮件草稿，请手动添加附件后发送到 ${counselorEmail}。`);
+  sendBtn.dataset.sending = "1";
+  sendBtn.textContent = "发送中...";
+  updateSendButtonState();
+  showSendStatus("系统正在通过云端接口发送邮件，请稍候。", "info");
+
+  try {
+    const response = await fetch('/api/send-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(buildSubmissionPayload())
+    });
+
+    const data = await response.json().catch(() => ({ ok: false, message: '服务端返回了无法识别的响应。' }));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || '云端自动发送失败，请稍后重试。');
+    }
+
+    sendBtn.dataset.sent = "1";
+    sendBtn.dataset.sending = "0";
+    sendBtn.textContent = "已自动发送";
+    updateSendButtonState();
+    showInlineNotice("云端自动发送成功，咨询师将收到邮件与 CSV 附件。", "success");
+    showSendStatus(`${data.message} 如需自己留档，仍可点击“导出 CSV 详情”。`, "success");
+  } catch (error) {
+    sendBtn.dataset.sending = "0";
+    sendBtn.dataset.sent = "0";
+    sendBtn.textContent = "重新尝试发送";
+    updateSendButtonState();
+    downloadCsvFile();
+    showInlineNotice("自动发送失败，已为您下载 CSV，请人工发送给咨询师。", "error");
+    showSendStatus(`${error.message || '自动发送失败。'} 系统已自动下载 CSV，请将该文件人工发送到 ${counselorEmail}。`, "error");
+  }
 }
 </script>
 
