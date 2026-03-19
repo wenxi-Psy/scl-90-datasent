@@ -27,7 +27,17 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 .progress-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; color: #475569; margin-bottom: 8px; }
 .progress-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #6366f1, #818cf8); transition: width 0.2s ease; }
-.inline-notice { display: none; margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; font-size: 0.86rem; }
+.inline-notice, .send-status { display: none; margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; font-size: 0.86rem; }
+.notice-info { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.notice-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.notice-error { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.send-panel { margin-top: 24px; padding: 18px; border-radius: 14px; border: 1px solid #dbeafe; background: #f8fbff; }
+.send-panel h4 { margin: 0 0 10px 0; color: #0f172a; }
+.send-panel p { margin: 0 0 14px 0; font-size: 0.9rem; color: #475569; }
+.consent-row { display: flex; align-items: flex-start; gap: 10px; font-size: 0.9rem; color: #0f172a; }
+.consent-row input { margin-top: 3px; }
+.bot-trap { position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
 
 /* 题目卡片 */
 .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; border: 1px solid #e2e8f0; transition: border-color 0.3s, box-shadow 0.3s; }
@@ -76,7 +86,9 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
   label:active .opt-label { transform: scale(0.995); }
   .progress-wrap { top: 8px; padding: 10px 12px; margin-bottom: 12px; }
   .progress-header { font-size: 0.82rem; }
-  .inline-notice { font-size: 0.8rem; }
+  .inline-notice, .send-status { font-size: 0.8rem; }
+  .send-panel { padding: 16px; }
+  .consent-row { align-items: flex-start; }
   .sticky-actions { bottom: 12px; padding: 6px 10px; gap: 6px; }
   .btn { padding: 7px 12px; font-size: 0.78rem; }
 }
@@ -109,6 +121,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 .btn-primary { background: var(--primary); color: white; }
 .btn-test { background: #475569; color: white; }
 .btn-export { background: #059669; color: white; display: none; }
+.btn-email { background: #0f766e; color: white; display: none; }
 .btn-edit { background: #475569; color: white; display: none; }
 </style>
 </head>
@@ -125,7 +138,7 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 <div class="privacy-notice">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e40af" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
 <div class="privacy-text">
-<strong>隐私保护声明：</strong>本程序为纯前端架构，您的所有答题数据均<strong>仅在您的浏览器本地</strong>进行计算，系统不会上传、存储或收集您的任何个人信息与测评结果。
+<strong>隐私保护声明：</strong>本程序默认在浏览器本地完成测评与评分。只有当您在结果页<strong>勾选“已同意上传给咨询师”并点击自动发送</strong>后，系统才会把本次答卷摘要与 CSV 上传到云端发送接口，自动转发给咨询师邮箱；服务端仅用于完成发送，并带有基础频率限制与异常提交拦截。
 </div>
 </div>
 
@@ -166,6 +179,20 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 
 <div id="analysisArea" style="margin-top:30px;"></div>
 
+<div id="sendPanel" class="send-panel">
+<h4>发送给咨询师</h4>
+<p>勾选同意后，系统会把本次测评摘要与 CSV 附件上传到云端接口，并自动发送到咨询师邮箱 <strong>wenxi_deng@qq.com</strong>。如果自动发送失败，系统会自动下载 CSV，方便您人工转发给咨询师。</p>
+<label class="consent-row">
+  <input type="checkbox" id="consentCheckbox">
+  <span>我已知晓并同意将本次测评结果上传给咨询师，仅用于本次测评沟通与报告发送。</span>
+</label>
+<div id="sendStatus" class="send-status" role="status" aria-live="polite"></div>
+</div>
+
+<div class="bot-trap" aria-hidden="true">
+  <label>请勿填写<input id="trapField" type="text" autocomplete="off" tabindex="-1"></label>
+</div>
+
 <div class="disclaimer">
 <strong>专业声明与局限性说明：</strong><br>
 1. 本量表为<strong>主观自评工具</strong>，结果反映的是受试者<strong>近一周内</strong>的主观感受，具有较强的时效性。<br>
@@ -179,9 +206,10 @@ label:active .opt-label { transform: scale(0.99); box-shadow: 0 1px 3px rgba(15,
 <div class="sticky-actions">
     <!-- button class="btn btn-test" onclick="autoFill()">模拟填卷</button-->
     <!--button class="btn btn-test" onclick="autoFill()">模拟填卷</button-->
-<button id="submitBtn" class="btn btn-primary" onclick="submit()">生成报告</button>
-<button id="dlBtn" class="btn btn-export" onclick="exportData()">导出 CSV 详情</button>
-<button id="editBtn" class="btn btn-edit" onclick="backToForm()">返回修改答案</button>
+<button type="button" id="submitBtn" class="btn btn-primary" onclick="generateReport()">生成报告</button>
+<button type="button" id="dlBtn" class="btn btn-export" onclick="exportData()">导出 CSV 详情</button>
+<button type="button" id="emailBtn" class="btn btn-email" onclick="sendToCounselorEmail()" disabled>自动发送给咨询师</button>
+<button type="button" id="editBtn" class="btn btn-edit" onclick="backToForm()">返回修改答案</button>
 </div>
 
 <script>
@@ -206,14 +234,39 @@ const progressFill = document.getElementById("progressFill");
 const progressText = document.getElementById("progressText");
 const progressBar = document.querySelector(".progress-bar");
 const inlineNotice = document.getElementById("inlineNotice");
+const sendBtn = document.getElementById("emailBtn");
+const editBtn = document.getElementById("editBtn");
+const consentCheckbox = document.getElementById("consentCheckbox");
+const sendStatus = document.getElementById("sendStatus");
+const trapField = document.getElementById("trapField");
+const pageStartedAt = Date.now();
 
-function showInlineNotice(msg) {
+function showInlineNotice(msg, type = "error") {
   inlineNotice.innerText = msg;
+  inlineNotice.className = `inline-notice notice-${type}`;
   inlineNotice.style.display = "block";
 }
 
 function hideInlineNotice() {
   inlineNotice.style.display = "none";
+  inlineNotice.className = "inline-notice";
+}
+
+function showSendStatus(msg, type = "info") {
+  sendStatus.innerText = msg;
+  sendStatus.className = `send-status notice-${type}`;
+  sendStatus.style.display = "block";
+}
+
+function hideSendStatus() {
+  sendStatus.style.display = "none";
+  sendStatus.className = "send-status";
+}
+
+function updateSendButtonState() {
+  const isSending = sendBtn.dataset.sending === "1";
+  const isSent = sendBtn.dataset.sent === "1";
+  sendBtn.disabled = !latestReport || !consentCheckbox.checked || isSending || isSent;
 }
 
 function highlightMissingQuestion(questionId) {
@@ -247,13 +300,26 @@ form.addEventListener("change", (e) => {
   if (e.target.matches("input[type=\"radio\"]")) {
     updateProgress();
     hideInlineNotice();
+hideSendStatus();
     const card = e.target.closest(".card");
     if (card) card.classList.remove("missing-highlight");
   }
 });
+
+consentCheckbox.addEventListener("change", () => {
+  if (consentCheckbox.checked) {
+    showSendStatus("您已同意上传。点击“自动发送给咨询师”后，系统会通过云端接口自动发出邮件。", "info");
+  } else {
+    hideSendStatus();
+  }
+  updateSendButtonState();
+});
+
 updateProgress();
 
 let currentScores = {};
+let latestReport = null;
+const counselorEmail = "wenxi_deng@qq.com";
 
 function fillScores(scores) {
   scores.forEach((score, idx) => {
@@ -302,7 +368,7 @@ function autoFill(minAvg = 1.6, maxAvg = 2.5) {
   updateProgress();
 
   const avg = (total / totalQuestions).toFixed(2);
-  showInlineNotice(`已随机填卷（Mac 快捷键），当前总均分约 ${avg}。`);
+  showInlineNotice(`已随机填卷（Mac 快捷键），当前总均分约 ${avg}。`, "info");
 }
 
 document.addEventListener("keydown", (event) => {
@@ -321,7 +387,62 @@ document.addEventListener("keydown", (event) => {
   autoFill();
 });
 
-function submit() {
+function getFactorResults() {
+  return Object.entries(factorDefs).map(([name, def]) => {
+    const sum = def.ids.reduce((acc, id) => acc + currentScores[id], 0);
+    const avg = Number((sum / def.ids.length).toFixed(2));
+    return { name, avg, status: avg >= 2.0 ? "需关注" : "正常", desc: def.desc, isHigh: avg >= 2.0 };
+  });
+}
+
+function buildCsvContent() {
+  const factorResults = getFactorResults();
+  let csv = "\uFEFF";
+  csv += "【维度因子分析】\n";
+  csv += "维度名称,因子分,评估结论\n";
+
+  factorResults.forEach((item) => {
+    csv += `${item.name},${item.avg.toFixed(2)},${item.status}\n`;
+  });
+
+  csv += "\n";
+  csv += "【90项原始答卷详情】\n";
+  csv += "题号,条目内容,所属维度,得分\n";
+
+  for (let i = 1; i <= 90; i++) {
+    let dimension = "其他";
+    for (let f in factorDefs) {
+      if (factorDefs[f].ids.includes(i)) {
+        dimension = f;
+        break;
+      }
+    }
+    csv += `${i},${questions[i-1]},${dimension},${currentScores[i]}\n`;
+  }
+
+  return csv;
+}
+
+function getCsvFilename() {
+  const now = new Date();
+  const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `SCL90测评报告_${isoDate}.csv`;
+}
+
+function buildSubmissionPayload() {
+  return {
+    consent: consentCheckbox.checked,
+    total: latestReport.total,
+    posCount: latestReport.posCount,
+    avg: Number(latestReport.avg.toFixed(2)),
+    startedAt: pageStartedAt,
+    trap: trapField.value.trim(),
+    answers: currentScores
+  };
+}
+
+
+function generateReport() {
 const fd = new FormData(form);
 let total = 0, posCount = 0, missed = [];
 for(let i=1; i<=90; i++) {
@@ -333,13 +454,14 @@ total += s; if(s >= 2) posCount++;
 }
 }
 if(missed.length > 0) {
-showInlineNotice(`还有 ${missed.length} 题未完成，请先补全后再生成报告。`);
+showInlineNotice(`还有 ${missed.length} 题未完成，请先补全后再生成报告。`, "error");
 highlightMissingQuestion(missed[0]);
 document.getElementById('q-'+missed[0]).scrollIntoView({behavior:'smooth', block:'center'});
 return;
 }
 
 hideInlineNotice();
+hideSendStatus();
 
 const tLabel = document.getElementById("resTotal");
 const pLabel = document.getElementById("resPosCount");
@@ -348,88 +470,125 @@ document.getElementById("resAvg").innerText = (total/90).toFixed(2);
 tLabel.className = `stat-val ${total >= 160 ? 'warning' : ''}`;
 pLabel.className = `stat-val ${posCount >= 43 ? 'warning' : ''}`;
 
+const factorResults = getFactorResults();
 let fHtml = ""; let analysisDetails = "<h4>评分偏高维度解释：</h4>";
 let highCount = 0;
 
-for(let f in factorDefs) {
-const ids = factorDefs[f].ids;
-const avg = (ids.reduce((a,b)=>a+currentScores[b], 0) / ids.length).toFixed(2);
-const isH = avg >= 2.0;
-fHtml += `<div class="f-card ${isH?'warning':''}"><b>${f}</b><br><span style="font-size:1.1rem">${avg}</span></div>`;
-if(isH) {
+factorResults.forEach((item) => {
+const avgText = item.avg.toFixed(2);
+fHtml += `<div class="f-card ${item.isHigh ? 'warning' : ''}"><b>${item.name}</b><br><span style="font-size:1.1rem">${avgText}</span></div>`;
+if(item.isHigh) {
 highCount++;
-analysisDetails += `<div class="analysis-item"><b>${f}：</b>${factorDefs[f].desc}</div>`;
+analysisDetails += `<div class="analysis-item"><b>${item.name}：</b>${item.desc}</div>`;
 }
-}
+});
 document.getElementById("factorGrid").innerHTML = fHtml;
 document.getElementById("analysisArea").innerHTML = highCount > 0 ? analysisDetails : `<p style="color:var(--success)">各项指标均在参考范围内。</p>`;
 
+latestReport = {
+  total,
+  posCount,
+  avg: total / 90,
+  factorResults
+};
+
 document.getElementById("result-view").style.display = "block";
 document.getElementById("dlBtn").style.display = "block";
+document.getElementById("emailBtn").style.display = "block";
+editBtn.style.display = "block";
 document.getElementById("submitBtn").style.display = "none";
+sendBtn.dataset.sending = "0";
+sendBtn.dataset.sent = "0";
+sendBtn.textContent = "自动发送给咨询师";
+consentCheckbox.checked = false;
+updateSendButtonState();
+showSendStatus("请先勾选“已同意上传给咨询师”，再执行云端自动发送。", "info");
 window.scrollTo({top: document.getElementById("result-view").offsetTop - 20, behavior: 'smooth'});
 }
 
 function backToForm() {
   document.getElementById("result-view").style.display = "none";
   document.getElementById("dlBtn").style.display = "none";
-  document.getElementById("editBtn").style.display = "none";
+  document.getElementById("emailBtn").style.display = "none";
+  editBtn.style.display = "none";
   document.getElementById("submitBtn").style.display = "block";
+  consentCheckbox.checked = false;
+  sendBtn.dataset.sending = "0";
+  sendBtn.dataset.sent = "0";
+  sendBtn.textContent = "自动发送给咨询师";
+  hideInlineNotice();
+  hideSendStatus();
+  updateSendButtonState();
   window.scrollTo({top: form.offsetTop - 20, behavior: 'smooth'});
 }
 
+function downloadCsvFile() {
+  const csv = buildCsvContent();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = getCsvFilename();
+  link.click();
+  URL.revokeObjectURL(url);
+  return blob;
+}
+
 function exportData() {
-    // 1. 初始化 CSV 头部，\uFEFF 用于解决 Excel 打开中文乱码问题
-    // 1. 初始化 CSV 头部 (带 BOM 防止乱码)
-let csv = "\uFEFF";
-
-    // --- 第一部分：维度因子分 ---
-    // --- 第一部分：维度因子分析 ---
-csv += "【维度因子分析】\n";
-    csv += "维度名称,因子分,评估结论\n";
-
-for(let f in factorDefs) {
-const ids = factorDefs[f].ids;
-        // 计算该维度的总分
-const sum = ids.reduce((a,b) => a + currentScores[b], 0);
-        // 计算均分 (保留2位小数)
-const avg = (sum / ids.length).toFixed(2);
-        // 简单的判断逻辑 (≥2分提示需关注)
-const status = avg >= 2.0 ? "需关注" : "正常";
-
-csv += `${f},${avg},${status}\n`;
+  if (!latestReport) {
+    showInlineNotice("请先生成报告，再导出 CSV。", "error");
+    return;
+  }
+  downloadCsvFile();
+  showInlineNotice("CSV 已下载到本地，可留存或发送给咨询师。", "info");
 }
 
-    // 添加空行，把两部分数据隔开
-    // 添加空行分隔
-csv += "\n";
+async function sendToCounselorEmail() {
+  if (!latestReport) {
+    showInlineNotice("请先生成报告，再发送给咨询师。", "error");
+    return;
+  }
 
-    // --- 第二部分：原始条目得分 ---
-    // --- 第二部分：原始条目详情 (带所属维度) ---
-csv += "【90项原始答卷详情】\n";
-    csv += "题号,条目内容,所属维度,得分\n";
+  if (!consentCheckbox.checked) {
+    showSendStatus("请先勾选“已同意上传给咨询师”，再执行自动发送。", "error");
+    updateSendButtonState();
+    return;
+  }
 
-for(let i=1; i<=90; i++) {
-        // 查找当前题目 i 属于哪个维度
-        let dimension = "其他"; // 默认值
-        for(let f in factorDefs) {
-            if(factorDefs[f].ids.includes(i)) {
-                dimension = f;
-                break;
-            }
-        }
+  sendBtn.dataset.sending = "1";
+  sendBtn.textContent = "发送中...";
+  updateSendButtonState();
+  showSendStatus("系统正在通过云端接口发送邮件，请稍候。", "info");
 
-        // 写入一行：题号, 内容, 维度, 得分
-        csv += `${i},${questions[i-1]},${dimension},${currentScores[i]}\n`;
-}
+  try {
+    const response = await fetch('/api/send-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(buildSubmissionPayload())
+    });
 
-    // --- 生成并下载文件 ---
-    // --- 生成文件并下载 ---
-const blob = new Blob([csv], {type: 'text/csv'});
-const link = document.createElement("a");
-link.href = URL.createObjectURL(blob);
-link.download = `SCL90测评报告_${new Date().toLocaleDateString()}.csv`;
-link.click();
+    const data = await response.json().catch(() => ({ ok: false, message: '服务端返回了无法识别的响应。' }));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || '云端自动发送失败，请稍后重试。');
+    }
+
+    sendBtn.dataset.sent = "1";
+    sendBtn.dataset.sending = "0";
+    sendBtn.textContent = "已自动发送";
+    updateSendButtonState();
+    showInlineNotice("云端自动发送成功，咨询师将收到邮件与 CSV 附件。", "success");
+    showSendStatus(`${data.message} 如需自己留档，仍可点击“导出 CSV 详情”。`, "success");
+  } catch (error) {
+    sendBtn.dataset.sending = "0";
+    sendBtn.dataset.sent = "0";
+    sendBtn.textContent = "重新尝试发送";
+    updateSendButtonState();
+    downloadCsvFile();
+    showInlineNotice("自动发送失败，已为您下载 CSV，请人工发送给咨询师。", "error");
+    showSendStatus(`${error.message || '自动发送失败。'} 系统已自动下载 CSV，请将该文件人工发送到 ${counselorEmail}。`, "error");
+  }
 }
 </script>
 
