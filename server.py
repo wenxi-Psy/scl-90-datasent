@@ -24,6 +24,7 @@ SMTP_PASS = os.environ.get('SMTP_PASS', '')
 SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER)
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'false').lower() == 'true'
 MOCK_EMAIL = os.environ.get('MOCK_EMAIL', '0') == '1'
+ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get('ALLOWED_ORIGINS', 'https://wenxi-psy.github.io,http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()]
 
 RATE_LIMIT_STORE = {}
 
@@ -43,15 +44,30 @@ FACTOR_DEFS = {
 }
 
 
+def build_cors_headers(handler):
+    origin = handler.headers.get('Origin', '')
+    if origin and origin in ALLOWED_ORIGINS:
+        return {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Vary': 'Origin',
+        }
+    return {}
+
+
 def json_response(handler, status, payload, extra_headers=None):
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     handler.send_response(status)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.send_header('Cache-Control', 'no-store')
+    headers = {}
+    headers.update(build_cors_headers(handler))
     if extra_headers:
-        for key, value in extra_headers.items():
-            handler.send_header(key, str(value))
+        headers.update(extra_headers)
+    for key, value in headers.items():
+        handler.send_header(key, str(value))
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -216,10 +232,14 @@ def validate_payload(payload):
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
+        headers = build_cors_headers(self)
+        if not headers:
+            self.send_response(403)
+            self.end_headers()
+            return
         self.send_response(204)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        for key, value in headers.items():
+            self.send_header(key, str(value))
         self.end_headers()
 
     def do_GET(self):
